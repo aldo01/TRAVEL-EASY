@@ -1,0 +1,75 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Testing
+coverage/
+*.test
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# Environment
+.env.local
+.env.development
+.env.test
+
+# Build artifacts
+dist/
+build/
+tmp/
+
+# Logs
+*.log
+logs/
+
+# QR codes
+qr_codes/
+
+# Database files
+*.db
+*.sqlite
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (optional)
+*.md
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# TypeScript/Node (if any)
+tsconfig.json
+package.json
+package-lock.json
+
+# Prisma (old)
+prisma/
+
+# Migration and seed (run separately)
+cmd/migrate/
+cmd/seed/

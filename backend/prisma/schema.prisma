@@ -1,0 +1,277 @@
+// Prisma Schema for Locker Storage System
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Model
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  password        String
+  name            String
+  phoneNumber     String?
+  profileImageUrl String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  bookings        Booking[]
+  
+  @@map("users")
+}
+
+// Location Model (Storage Points - Gyms, Clubs, Schools, Kiosks)
+model Location {
+  id              String   @id @default(uuid())
+  name            String
+  type            LocationType
+  address         String
+  city            String
+  state           String?
+  zipCode         String?
+  country         String
+  latitude        Float
+  longitude       Float
+  
+  // Operating details
+  openingTime     String   // Format: "09:00"
+  closingTime     String   // Format: "21:00"
+  isOpen24Hours   Boolean  @default(false)
+  
+  // Contact & Info
+  phoneNumber     String?
+  email           String?
+  description     String?
+  imageUrl        String?
+  amenities       String[] // ["WiFi", "Security Camera", "24/7 Access"]
+  
+  // Pricing
+  hourlyRate      Float    @default(0)
+  dailyRate       Float    @default(0)
+  
+  // Status
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lockers         Locker[]
+  bookings        Booking[]
+  
+  @@map("locations")
+  @@index([latitude, longitude])
+  @@index([city, isActive])
+}
+
+enum LocationType {
+  KIOSK
+  GYM
+  CLUB
+  SCHOOL
+  HOTEL
+  CAFE
+  STORE
+  OTHER
+}
+
+// Locker Model
+model Locker {
+  id              String      @id @default(uuid())
+  locationId      String
+  lockerNumber    String      // e.g., "A-101", "B-205"
+  size            LockerSize
+  
+  // Physical details
+  floor           String?     // e.g., "Ground", "1st Floor"
+  section         String?     // e.g., "Section A", "Zone B"
+  
+  // Status
+  status          LockerStatus @default(AVAILABLE)
+  isOperational   Boolean     @default(true)
+  
+  // Dimensions (in cm)
+  height          Int?
+  width           Int?
+  depth           Int?
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  location        Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  bookings        Booking[]
+  
+  @@unique([locationId, lockerNumber])
+  @@map("lockers")
+  @@index([locationId, status])
+}
+
+enum LockerSize {
+  SMALL    // Small bags, backpacks
+  MEDIUM   // Medium suitcases
+  LARGE    // Large suitcases
+  XLARGE   // Multiple bags
+}
+
+enum LockerStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+// Booking Model
+model Booking {
+  id                  String        @id @default(uuid())
+  userId              String
+  locationId          String
+  lockerId            String
+  
+  // Booking details
+  bookingNumber       String        @unique
+  startTime           DateTime
+  endTime             DateTime?     // null for ongoing bookings
+  
+  // Pricing
+  rateType            RateType      // HOURLY or DAILY
+  basePrice           Float
+  additionalCharges   Float         @default(0)
+  totalPrice          Float
+  
+  // Status
+  status              BookingStatus @default(PENDING)
+  
+  // QR Code for access
+  qrCode              String        @unique
+  qrCodeImageUrl      String?       // URL to QR code image
+  
+  // Access tracking
+  checkInTime         DateTime?
+  checkOutTime        DateTime?
+  accessLogs          AccessLog[]
+  
+  // Payment
+  paymentStatus       PaymentStatus @default(PENDING)
+  paymentMethod       String?       // "card", "cash", "upi"
+  transactionId       String?
+  
+  // Notes
+  notes               String?
+  cancellationReason  String?
+  
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  user                User          @relation(fields: [userId], references: [id])
+  location            Location      @relation(fields: [locationId], references: [id])
+  locker              Locker        @relation(fields: [lockerId], references: [id])
+  
+  @@map("bookings")
+  @@index([userId, status])
+  @@index([locationId, status])
+  @@index([lockerId, status])
+  @@index([qrCode])
+}
+
+enum RateType {
+  HOURLY
+  DAILY
+  MULTI_DAY
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  REFUNDED
+  FAILED
+}
+
+// Access Log Model (Track locker access via QR code)
+model AccessLog {
+  id              String      @id @default(uuid())
+  bookingId       String
+  action          AccessAction
+  timestamp       DateTime    @default(now())
+  method          String?     // "QR_SCAN", "MANUAL_OVERRIDE"
+  deviceInfo      String?     // Device used for access
+  
+  booking         Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  @@map("access_logs")
+  @@index([bookingId, timestamp])
+}
+
+enum AccessAction {
+  LOCK
+  UNLOCK
+  OPEN
+  CLOSE
+}
+
+// Pricing Model (Optional - for dynamic pricing)
+model PricingRule {
+  id              String      @id @default(uuid())
+  locationId      String?
+  lockerSize      LockerSize?
+  
+  // Time-based pricing
+  startHour       Int?        // 0-23
+  endHour         Int?
+  dayOfWeek       Int?        // 0-6 (Sunday-Saturday)
+  
+  // Rates
+  hourlyRate      Float?
+  dailyRate       Float?
+  
+  // Multiplier for peak hours
+  priceMultiplier Float       @default(1.0)
+  
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  @@map("pricing_rules")
+}
+
+// Notification Model (For user notifications)
+model Notification {
+  id              String      @id @default(uuid())
+  userId          String
+  type            NotificationType
+  title           String
+  message         String
+  isRead          Boolean     @default(false)
+  
+  // Related entities
+  bookingId       String?
+  locationId      String?
+  
+  createdAt       DateTime    @default(now())
+  
+  @@map("notifications")
+  @@index([userId, isRead])
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMED
+  BOOKING_REMINDER
+  BOOKING_EXPIRED
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  LOCKER_UNLOCK
+  SYSTEM
+}
