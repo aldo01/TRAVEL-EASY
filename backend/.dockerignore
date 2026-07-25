@@ -70,6 +70,4 @@ package-lock.json
 # Prisma (old)
 prisma/
 
-# Migration and seed (run separately)
-cmd/migrate/
-cmd/seed/
+# Migration and seed (needed for container build)

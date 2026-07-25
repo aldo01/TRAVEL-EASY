@@ -13,7 +13,7 @@ Complete guide to set up and run the Travel Easy locker storage system.
 ## Architecture
 
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS (Port 5173)
-- **Backend**: Go + Gin + GORM + PostgreSQL (Port 8080)
+- **Backend**: Go + Gin + GORM + PostgreSQL (Container port 8080, Docker host port 8081 by default)
 - **Database**: PostgreSQL with geospatial support
 
 ---
@@ -25,6 +25,12 @@ Complete guide to set up and run the Travel Easy locker storage system.
 1. **Node.js** 18+ ([Download](https://nodejs.org/))
 2. **Go** 1.21+ ([Download](https://golang.org/dl/))
 3. **PostgreSQL** 14+ ([Download](https://www.postgresql.org/download/))
+
+### If you don't want to install Node/Go/PostgreSQL
+
+You can run everything needed for local development with **Docker Desktop**:
+
+- `docker compose up -d --build` from the repo root starts Postgres, the Go backend, the notification-service, and the frontend dev server (in a `node:20` container mounting this repo)
 
 ### Verify Installation
 
@@ -38,6 +44,34 @@ psql --version    # Should be 14+
 ---
 
 ## Setup Instructions
+
+### One-command local start (Docker)
+
+From the repo root:
+
+```bash
+docker compose up -d --build
+```
+
+- Frontend: http://localhost:5173
+- Backend: http://localhost:8081/health
+- PostgreSQL (host): `localhost:5433`
+
+Stop everything:
+
+```bash
+docker compose down
+```
+
+**Known local-dev quirk:** the `frontend` service bind-mounts the repo's `node_modules` into a Linux container. If that folder was previously installed on a macOS host, Vite's `rolldown-vite` native binding will be for the wrong platform and the container will fail to start with a `Cannot find native binding` error. If that happens, just run the frontend natively on the host instead:
+
+```bash
+docker compose stop frontend
+npm install
+npm run dev
+```
+
+It will talk to the already-running Dockerized backend on `http://localhost:8081` without any extra configuration.
 
 ### Step 1: Database Setup
 
@@ -139,7 +173,7 @@ Starting server on port 8080...
 cd backend
 go run cmd/server/main.go
 ```
-→ Backend API: http://localhost:8080
+→ Backend API: http://localhost:8081 (Docker) or http://localhost:8080 (running `go run` locally)
 
 ### Terminal 2 - Frontend Server
 ```bash
@@ -154,7 +188,7 @@ npm run dev
 ### 1. Health Check
 
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 ```
 
 **Expected Response:**
@@ -168,7 +202,7 @@ curl http://localhost:8080/health
 ### 2. Login with Test User
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/login \
+curl -X POST http://localhost:8081/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
@@ -186,8 +220,8 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
     "user": {
       "id": "uuid",
       "email": "test@example.com",
-      "firstName": "John",
-      "lastName": "Doe"
+      "name": "John Doe",
+      "phoneNumber": "+4512345678"
     }
   }
 }
@@ -196,7 +230,7 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 ### 3. Get Nearby Locations (Copenhagen)
 
 ```bash
-curl "http://localhost:8080/api/v1/locations/nearby?lat=55.6761&lon=12.5683&radius=10"
+curl "http://localhost:8081/api/v1/locations/nearby?lat=55.6761&lon=12.5683&radius=10"
 ```
 
 ### 4. Open Frontend
@@ -215,7 +249,7 @@ Visit: http://localhost:5173
 travel-easy/
 ├── frontend/                    # React frontend
 │   ├── src/
-│   │   ├── pages/              # Home, Trips, Bookings, Profile
+│   │   ├── pages/              # Home, Locations, Bookings, Profile, Host
 │   │   ├── components/         # Layout, reusable components
 │   │   ├── services/           # API client
 │   │   └── types/              # TypeScript types
@@ -335,14 +369,14 @@ lsof -ti:8080 | xargs kill -9
 ### Issue: Frontend Can't Connect to Backend
 
 **Check:**
-1. Backend is running on http://localhost:8080
+1. Backend is running on http://localhost:8081 (Docker) or http://localhost:8080 (local)
 2. Frontend API URL is correct in `src/services/api.ts`
 3. No CORS errors in browser console
 
 **Solution:**
 ```bash
 # Check backend health
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 
 # Verify ports
 netstat -an | findstr "8080 5173"
@@ -452,7 +486,7 @@ npm run preview
 For issues or questions:
 1. Check the troubleshooting section above
 2. Review backend README: `backend/README.md`
-3. Check project documentation: `IMPLEMENTATION-GUIDE.md`
+3. Check the main project documentation: `README.md`
 
 ---
 

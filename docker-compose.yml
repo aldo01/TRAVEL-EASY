@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-locker_storage}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - travel-easy-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-locker_storage}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRY: ${JWT_EXPIRY:-168h}
+      PORT: "8080"
+      GIN_MODE: ${GIN_MODE:-release}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+    ports:
+      - "${API_PORT:-8081}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend_init:
+        condition: service_completed_successfully
+      notification-service:
+        condition: service_started
+    networks:
+      - travel-easy-net
+
+  backend_init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-locker_storage}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRY: ${JWT_EXPIRY:-168h}
+      PORT: "8080"
+      GIN_MODE: ${GIN_MODE:-release}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["/bin/sh", "-lc", "./migrate && ./seed"]
+    networks:
+      - travel-easy-net
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8090"
+      GIN_MODE: ${GIN_MODE:-release}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-Travel Easy <onboarding@resend.dev>}
+    ports:
+      - "${NOTIFICATION_PORT:-8090}:8090"
+    networks:
+      - travel-easy-net
+
+  frontend:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8081/api/v1}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    command: ["/bin/sh", "-lc", "if [ ! -d node_modules ] || [ ! -d node_modules/react-day-picker ]; then npm install; fi && npm run dev -- --host 0.0.0.0 --port 5173"]
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - travel-easy-net
+
+volumes:
+  postgres_data:
+
+networks:
+  travel-easy-net:

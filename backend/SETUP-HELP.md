@@ -12,33 +12,23 @@ The backend requires a PostgreSQL database. You have two options:
 1. Open **Docker Desktop** application on Windows
 2. Wait for it to fully start (whale icon in system tray should be stable)
 
-### Step 2: Start PostgreSQL Database
+### Step 2: Start the full stack from the repo root
+
 ```bash
-cd backend
-docker-compose up -d
+cd ..
+docker compose up -d --build
 ```
 
-Expected output:
+This starts PostgreSQL, runs migrations + seed automatically (the one-shot `backend_init` service), then starts the backend, notification-service, and frontend.
+
+Expected output includes:
 ```
-✔ Container locker-storage-db  Started
+Container travel-easy-postgres-1        Healthy
+Container travel-easy-backend_init-1    Exited (0)
+Container travel-easy-backend-1         Started
 ```
 
-### Step 3: Run Migrations
-```bash
-go run cmd/migrate/main.go
-```
-
-### Step 4: Seed Database (Optional)
-```bash
-go run cmd/seed/main.go
-```
-
-### Step 5: Start Server
-```bash
-go run cmd/server/main.go
-```
-
-Server will start on http://localhost:8080
+Server will start on http://localhost:8081 (default)
 
 ---
 
@@ -119,8 +109,8 @@ Based on the error, **Docker Desktop is not running**.
 **Quick Fix:**
 1. Open Docker Desktop from Start Menu
 2. Wait 30 seconds for it to start
-3. Run: `docker-compose up -d` in backend folder
-4. Continue with migrations and server start
+3. Run: `docker compose up -d --build` from the repo root
+4. Migrations and seeding run automatically before the server starts
 
 ---
 

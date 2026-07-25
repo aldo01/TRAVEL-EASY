@@ -38,9 +38,6 @@ COPY --from=builder /app/main .
 COPY --from=builder /app/migrate .
 COPY --from=builder /app/seed .
 
-# Copy .env file (optional, better to use env vars)
-COPY --from=builder /app/.env .
-
 # Expose port
 EXPOSE 8080
 

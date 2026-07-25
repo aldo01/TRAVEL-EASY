@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
 	"strconv"
+	"strings"
 
 	"locker-storage-api/config"
 	"locker-storage-api/internal/models"
@@ -10,6 +12,137 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+type CreateLocationRequest struct {
+	Name          string  `json:"name" binding:"required"`
+	Type          string  `json:"type" binding:"required"`
+	Address       string  `json:"address" binding:"required"`
+	City          string  `json:"city" binding:"required"`
+	State         *string `json:"state"`
+	ZipCode       *string `json:"zipCode"`
+	Country       string  `json:"country" binding:"required"`
+	Latitude      float64 `json:"latitude" binding:"required"`
+	Longitude     float64 `json:"longitude" binding:"required"`
+	OpeningTime   string  `json:"openingTime"`
+	ClosingTime   string  `json:"closingTime"`
+	IsOpen24Hours bool    `json:"isOpen24Hours"`
+	PhoneNumber   *string `json:"phoneNumber"`
+	Email         *string `json:"email"`
+	Description   *string `json:"description"`
+	ImageURL      *string `json:"imageUrl"`
+	Amenities     []string `json:"amenities"`
+	HourlyRate    float64 `json:"hourlyRate"`
+	DailyRate     float64 `json:"dailyRate"`
+
+	Lockers struct {
+		Small  int `json:"small"`
+		Medium int `json:"medium"`
+		Large  int `json:"large"`
+		XLarge int `json:"xlarge"`
+	} `json:"lockers"`
+}
+
+func CreateLocation(c *gin.Context) {
+	var req CreateLocationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ErrorResponse(c, 400, err.Error())
+		return
+	}
+
+	locationType := models.LocationType(strings.ToUpper(strings.TrimSpace(req.Type)))
+	switch locationType {
+	case models.LocationKiosk, models.LocationGym, models.LocationClub, models.LocationSchool,
+		models.LocationHotel, models.LocationCafe, models.LocationStore, models.LocationOther:
+		// ok
+	default:
+		utils.ErrorResponse(c, 400, "Invalid location type")
+		return
+	}
+
+	amenitiesJSON := ""
+	if len(req.Amenities) > 0 {
+		if b, err := json.Marshal(req.Amenities); err == nil {
+			amenitiesJSON = string(b)
+		}
+	}
+
+	location := models.Location{
+		Name:          req.Name,
+		Type:          locationType,
+		Address:       req.Address,
+		City:          req.City,
+		State:         req.State,
+		ZipCode:       req.ZipCode,
+		Country:       req.Country,
+		Latitude:      req.Latitude,
+		Longitude:     req.Longitude,
+		OpeningTime:   req.OpeningTime,
+		ClosingTime:   req.ClosingTime,
+		IsOpen24Hours: req.IsOpen24Hours,
+		PhoneNumber:   req.PhoneNumber,
+		Email:         req.Email,
+		Description:   req.Description,
+		ImageURL:      req.ImageURL,
+		Amenities:     amenitiesJSON,
+		HourlyRate:    req.HourlyRate,
+		DailyRate:     req.DailyRate,
+		IsActive:      true,
+		Rating:        0,
+		TotalReviews:  0,
+	}
+
+	tx := config.GetDB().Begin()
+	if err := tx.Create(&location).Error; err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(c, 500, "Failed to create location")
+		return
+	}
+
+	createLockers := func(size models.LockerSize, count int, startNumber *int) error {
+		for i := 0; i < count; i++ {
+			*startNumber = *startNumber + 1
+			locker := models.Locker{
+				LocationID:     location.ID,
+				LockerNumber:   strconv.Itoa(*startNumber),
+				Size:           size,
+				Status:         models.LockerAvailable,
+				IsOperational:  true,
+			}
+			if err := tx.Create(&locker).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	lockerNumber := 0
+	if err := createLockers(models.LockerSmall, req.Lockers.Small, &lockerNumber); err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(c, 500, "Failed to create lockers")
+		return
+	}
+	if err := createLockers(models.LockerMedium, req.Lockers.Medium, &lockerNumber); err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(c, 500, "Failed to create lockers")
+		return
+	}
+	if err := createLockers(models.LockerLarge, req.Lockers.Large, &lockerNumber); err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(c, 500, "Failed to create lockers")
+		return
+	}
+	if err := createLockers(models.LockerXLarge, req.Lockers.XLarge, &lockerNumber); err != nil {
+		tx.Rollback()
+		utils.ErrorResponse(c, 500, "Failed to create lockers")
+		return
+	}
+
+	tx.Commit()
+
+	utils.SuccessResponse(c, 201, "Location created successfully", gin.H{
+		"location": location,
+	})
+}
 
 func GetLocations(c *gin.Context) {
 	var locations []models.Location

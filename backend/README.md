@@ -156,7 +156,7 @@ go run cmd/seed/main.go
 
 This creates:
 - Test user (test@example.com / password123)
-- 5 sample locations in Copenhagen
+- Sample locations across multiple cities (e.g. Copenhagen, Bengaluru, New Delhi, London, New York)
 - 6 lockers per location
 - 1 sample booking
 
@@ -166,7 +166,9 @@ This creates:
 go run cmd/server/main.go
 ```
 
-Server will start on `http://localhost:8080`
+Server will start on `http://localhost:8080`.
+
+If you run the full stack via the repo-root `docker compose.yml`, the backend is exposed on `http://localhost:8081`.
 
 ## API Endpoints
 
@@ -210,21 +212,20 @@ POST   /api/v1/bookings/:id/cancel      # Cancel booking
 ### Register User
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/register \
+curl -X POST http://localhost:8081/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
     "password": "password123",
-    "firstName": "John",
-    "lastName": "Doe",
-    "phone": "+4512345678"
+    "name": "John Doe",
+    "phoneNumber": "+4512345678"
   }'
 ```
 
 ### Login
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/login \
+curl -X POST http://localhost:8081/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -242,8 +243,8 @@ Response:
     "user": {
       "id": "uuid",
       "email": "user@example.com",
-      "firstName": "John",
-      "lastName": "Doe"
+      "name": "John Doe",
+      "phoneNumber": "+4512345678"
     }
   }
 }
@@ -252,13 +253,13 @@ Response:
 ### Find Nearby Locations
 
 ```bash
-curl "http://localhost:8080/api/v1/locations/nearby?lat=55.6761&lon=12.5683&radius=5"
+curl "http://localhost:8081/api/v1/locations/nearby?lat=55.6761&lon=12.5683&radius=5"
 ```
 
 ### Create Booking
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/bookings \
+curl -X POST http://localhost:8081/api/v1/bookings \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{
@@ -273,7 +274,7 @@ curl -X POST http://localhost:8080/api/v1/bookings \
 ### Unlock Locker
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/bookings/:id/unlock \
+curl -X POST http://localhost:8081/api/v1/bookings/:id/unlock \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{
@@ -284,7 +285,7 @@ curl -X POST http://localhost:8080/api/v1/bookings/:id/unlock \
 ## Database Schema
 
 ### Users
-- id, email, password, first_name, last_name, phone
+- id, email, password, name, phone_number
 - JWT authentication
 
 ### Locations
@@ -292,6 +293,7 @@ curl -X POST http://localhost:8080/api/v1/bookings/:id/unlock \
 - latitude, longitude (for geospatial queries)
 - hourly_rate, daily_rate, rating
 - opening_time, closing_time
+- amenities stored as text (JSON array string)
 
 ### Lockers
 - id, location_id, locker_number, size, status

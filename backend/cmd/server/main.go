@@ -66,10 +66,16 @@ func main() {
 		// Public routes - Lockers
 		v1.GET("/lockers/available", handlers.GetAvailableLockers)
 
+		// Public routes - Geocoding (autocomplete)
+		v1.GET("/geocode/suggest", handlers.SuggestPlaces)
+
 		// Protected routes
 		protected := v1.Group("")
 		protected.Use(middleware.AuthMiddleware())
 		{
+			// Partner/host actions
+			protected.POST("/locations", handlers.CreateLocation)
+
 			// User profile
 			protected.GET("/profile", handlers.GetProfile)
 

@@ -1,95 +1,214 @@
-import { User as UserIcon, CreditCard, Settings, HelpCircle, Mail, LogOut } from 'lucide-react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { LogOut, User as UserIcon } from 'lucide-react'
 import type { User } from '../types'
+import { authService, authStore } from '../services/auth'
+
+type Mode = 'login' | 'register'
 
 export default function Profile() {
-  const user: User = {
-    id: '1',
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phoneNumber: '+1 234 567 8900',
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const [mode, setMode] = useState<Mode>(() => {
+    const m = searchParams.get('mode')
+    return m === 'register' ? 'register' : 'login'
+  })
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const redirectTo = useMemo(() => {
+    const value = searchParams.get('redirect')
+    if (!value) return null
+    // Keep it same-origin relative paths only.
+    if (!value.startsWith('/')) return null
+    return value
+  }, [searchParams])
+
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+
+  useEffect(() => {
+    const token = authStore.getToken()
+    if (!token) return
+
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const me = await authService.getProfile()
+        if (!cancelled) setUser(me)
+      } catch (e) {
+        authStore.clear()
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load profile')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const onLogout = () => {
+    authStore.clear()
+    setUser(null)
+    setError(null)
   }
 
-  const menuItems = [
-    {
-      section: 'Account',
-      items: [
-        { icon: UserIcon, label: 'Personal Information', href: '#' },
-        { icon: CreditCard, label: 'Payment Methods', href: '#' },
-        { icon: Settings, label: 'Travel Preferences', href: '#' },
-      ],
-    },
-    {
-      section: 'Support',
-      items: [
-        { icon: HelpCircle, label: 'Help Center', href: '#' },
-        { icon: Mail, label: 'Contact Us', href: '#' },
-      ],
-    },
-  ]
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+
+    setLoading(true)
+    setError(null)
+    try {
+      if (mode === 'login') {
+        const me = await authService.login(email.trim(), password)
+        setUser(me)
+      } else {
+        const me = await authService.register(name.trim(), email.trim(), password, phoneNumber.trim() || undefined)
+        setUser(me)
+      }
+
+      if (redirectTo) {
+        navigate(redirectTo, { replace: true })
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Authentication failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (user) {
+    return (
+      <div className="max-w-3xl space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
+          <p className="text-gray-600 mt-1">Manage your account and bookings.</p>
+        </div>
+
+        {error && <div className="text-sm text-red-600">{error}</div>}
+
+        <div className="bg-white rounded-lg shadow-md p-8">
+          <div className="flex items-center">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mr-6">
+              <UserIcon size={32} className="text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <div className="text-xl font-semibold text-gray-900">{user.name}</div>
+              <div className="text-gray-600">{user.email}</div>
+              {user.phoneNumber && <div className="text-gray-600">{user.phoneNumber}</div>}
+            </div>
+            <button
+              onClick={onLogout}
+              className="inline-flex items-center gap-2 text-red-600 hover:text-red-700 px-4 py-2 rounded-md hover:bg-red-50 transition-colors font-medium"
+            >
+              <LogOut size={18} />
+              Log out
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6 text-sm text-gray-600">
+          You are logged in. Go to <Link className="text-blue-600 hover:text-blue-700" to="/bookings">Bookings</Link> to view reservations.
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Profile Header */}
-      <div className="bg-white rounded-lg shadow-md p-8">
-        <div className="flex items-center">
-          <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mr-6">
-            <UserIcon size={48} className="text-blue-600" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold text-gray-900">{user.name}</h1>
-            <p className="text-gray-600 mt-1">{user.email}</p>
-            {user.phoneNumber && <p className="text-gray-600">{user.phoneNumber}</p>}
-          </div>
-          <button className="text-blue-600 hover:text-blue-700 px-4 py-2 rounded-md hover:bg-blue-50 transition-colors font-medium">
-            Edit Profile
+    <div className="max-w-lg space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Account</h1>
+        <p className="text-gray-600 mt-1">Log in to book lockers and manage bookings.</p>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setMode('login')}
+            className={`flex-1 py-2 rounded-md text-sm font-medium ${
+              mode === 'login' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Log in
+          </button>
+          <button
+            onClick={() => setMode('register')}
+            className={`flex-1 py-2 rounded-md text-sm font-medium ${
+              mode === 'register' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Register
           </button>
         </div>
-      </div>
 
-      {/* Account Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <div className="text-3xl font-bold text-blue-600">12</div>
-          <div className="text-gray-600 text-sm mt-1">Total Trips</div>
-        </div>
-        <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <div className="text-3xl font-bold text-blue-600">28</div>
-          <div className="text-gray-600 text-sm mt-1">Bookings</div>
-        </div>
-        <div className="bg-white rounded-lg shadow-md p-6 text-center">
-          <div className="text-3xl font-bold text-blue-600">15</div>
-          <div className="text-gray-600 text-sm mt-1">Countries Visited</div>
-        </div>
-      </div>
+        {error && <div className="text-sm text-red-600 mb-4">{error}</div>}
 
-      {/* Menu Sections */}
-      {menuItems.map((section) => (
-        <div key={section.section} className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">{section.section}</h2>
+        <form onSubmit={onSubmit} className="space-y-4">
+          {mode === 'register' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Your name"
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="you@example.com"
+            />
           </div>
-          <div className="divide-y divide-gray-200">
-            {section.items.map((item) => (
-              <a
-                key={item.label}
-                href={item.href}
-                className="flex items-center px-6 py-4 hover:bg-gray-50 transition-colors"
-              >
-                <item.icon className="w-5 h-5 text-gray-400 mr-4" />
-                <span className="flex-1 text-gray-900">{item.label}</span>
-                <span className="text-gray-400">→</span>
-              </a>
-            ))}
-          </div>
-        </div>
-      ))}
 
-      {/* Logout Button */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <button className="w-full flex items-center px-6 py-4 hover:bg-red-50 transition-colors text-left">
-          <LogOut className="w-5 h-5 text-red-500 mr-4" />
-          <span className="flex-1 text-red-600 font-medium">Log Out</span>
-        </button>
+          {mode === 'register' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Phone (optional)</label>
+              <input
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="+1 234 567 8900"
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="••••••••"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-3 px-6 rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
+          </button>
+        </form>
+
+        <div className="mt-6 text-xs text-gray-500">
+          Seeded test user: test@example.com / password123
+        </div>
       </div>
     </div>
   )

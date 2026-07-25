@@ -1,62 +1,87 @@
-// TypeScript interfaces for the application
+// TypeScript interfaces for Travel Easy (Locker Storage)
 
-export interface Destination {
-  id: string;
-  name: string;
-  country: string;
-  imageUrl?: string;
-  description: string;
-  rating: number;
+export type LocationType =
+  | 'KIOSK'
+  | 'GYM'
+  | 'CLUB'
+  | 'SCHOOL'
+  | 'HOTEL'
+  | 'CAFE'
+  | 'STORE'
+  | 'OTHER'
+
+export interface Location {
+  id: string
+  name: string
+  type: LocationType
+  address: string
+  city: string
+  state?: string | null
+  zipCode?: string | null
+  country: string
+  latitude: number
+  longitude: number
+  openingTime?: string
+  closingTime?: string
+  isOpen24Hours: boolean
+  phoneNumber?: string | null
+  email?: string | null
+  description?: string | null
+  imageUrl?: string | null
+  amenities: string
+  hourlyRate: number
+  dailyRate: number
+  isActive: boolean
+  rating: number
+  totalReviews: number
+  createdAt: string
+  updatedAt: string
 }
 
-export const TripStatus = {
-  UPCOMING: 'Upcoming',
-  ONGOING: 'Ongoing',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled'
-} as const
-
-export type TripStatus = typeof TripStatus[keyof typeof TripStatus]
-
-export interface Trip {
-  id: string;
-  destination: string;
-  startDate: Date;
-  endDate: Date;
-  status: TripStatus;
-  travelers: number;
+export interface LocationWithDistance extends Location {
+  distance: number
+  availableLockers: number
 }
 
-export const BookingType = {
-  FLIGHT: 'Flight',
-  HOTEL: 'Hotel',
-  CAR: 'Car Rental',
-  ACTIVITY: 'Activity'
-} as const
+export type LockerSize = 'SMALL' | 'MEDIUM' | 'LARGE' | 'XLARGE'
+export type LockerStatus = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'MAINTENANCE' | 'OUT_OF_SERVICE'
 
-export type BookingType = typeof BookingType[keyof typeof BookingType]
-
-export interface Booking {
-  id: string;
-  type: BookingType;
-  title: string;
-  details: string;
-  date: Date;
-  confirmationNumber?: string;
+export interface Locker {
+  id: string
+  locationId: string
+  lockerNumber: string
+  size: LockerSize
+  status: LockerStatus
+  isOperational: boolean
 }
 
-export interface Activity {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  price?: number;
+export type RateType = 'HOURLY' | 'DAILY' | 'MULTI_DAY'
+export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED'
+export type PaymentStatus = 'PENDING' | 'PAID' | 'PARTIALLY_PAID' | 'REFUNDED' | 'FAILED'
+
+export interface StorageBooking {
+  id: string
+  userId: string
+  locationId: string
+  lockerId: string
+  bookingNumber: string
+  startTime: string
+  endTime?: string | null
+  rateType: RateType
+  bags?: number
+  basePrice: number
+  totalPrice: number
+  status: BookingStatus
+  qrCode: string
+  paymentStatus: PaymentStatus
+  location?: Location
+  locker?: Locker
 }
 
 export interface User {
-  id: string;
-  name: string;
-  email: string;
-  phoneNumber?: string;
-  profileImageUrl?: string;
+  id: string
+  name: string
+  email: string
+  phoneNumber?: string | null
+  profileImageUrl?: string | null
 }

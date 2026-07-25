@@ -1,4 +1,4 @@
-m,.?m     package models
+package models
 
 import (
 	"time"
@@ -140,6 +140,7 @@ type Booking struct {
 	StartTime          time.Time     `gorm:"not null" json:"startTime"`
 	EndTime            *time.Time    `json:"endTime"`
 	RateType           RateType      `gorm:"type:varchar(20);not null" json:"rateType"`
+	Bags               int           `gorm:"default:1" json:"bags"`
 	BasePrice          float64       `gorm:"not null" json:"basePrice"`
 	AdditionalCharges  float64       `gorm:"default:0" json:"additionalCharges"`
 	TotalPrice         float64       `gorm:"not null" json:"totalPrice"`
