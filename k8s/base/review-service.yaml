@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: review-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: review-service }
+  template:
+    metadata:
+      labels: { app: review-service }
+    spec:
+      initContainers:
+        - name: migrate
+          image: travel-easy/review-service
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-lc", "./migrate"]
+          env:
+            - name: DB_USER
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: DB_USER } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: travel-easy-secrets, key: DB_PASSWORD } }
+            - name: DATABASE_URL
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@review-db:5432/review?sslmode=disable"
+      containers:
+        - name: review-service
+          image: travel-easy/review-service
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8004
+          env:
+            - name: PORT
+              value: "8004"
+            - name: DB_USER
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: DB_USER } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: travel-easy-secrets, key: DB_PASSWORD } }
+            - name: DATABASE_URL
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@review-db:5432/review?sslmode=disable"
+            - name: NATS_URL
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: NATS_URL } }
+            - name: AUTH_SERVICE_URL
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: AUTH_SERVICE_URL } }
+            - name: GIN_MODE
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: GIN_MODE } }
+          readinessProbe:
+            httpGet: { path: /health, port: 8004 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: review-service
+spec:
+  selector: { app: review-service }
+  ports:
+    - port: 8004
+      targetPort: 8004

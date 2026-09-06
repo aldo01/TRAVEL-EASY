@@ -183,6 +183,21 @@ type AccessLog struct {
 	Booking Booking `gorm:"foreignKey:BookingID" json:"booking,omitempty"`
 }
 
+type Review struct {
+	ID         string    `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	LocationID string    `gorm:"type:uuid;not null;index;uniqueIndex:idx_review_user_location" json:"locationId"`
+	UserID     string    `gorm:"type:uuid;not null;uniqueIndex:idx_review_user_location" json:"userId"`
+	BookingID  *string   `gorm:"type:uuid;index" json:"bookingId"`
+	UserName   string    `json:"userName"`
+	Rating     int       `gorm:"not null" json:"rating"` // 1-5
+	Comment    string    `gorm:"type:text" json:"comment"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+
+	Location Location `gorm:"foreignKey:LocationID" json:"-"`
+	User     User     `gorm:"foreignKey:UserID" json:"-"`
+}
+
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&User{},
@@ -190,5 +205,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&Locker{},
 		&Booking{},
 		&AccessLog{},
+		&Review{},
 	)
 }

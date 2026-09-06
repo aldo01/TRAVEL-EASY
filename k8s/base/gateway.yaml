@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+    spec:
+      containers:
+        - name: gateway
+          image: travel-easy/gateway
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: travel-easy-secrets, key: JWT_SECRET } }
+            - name: CORS_ORIGIN
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: CORS_ORIGIN } }
+            - name: AUTH_SERVICE_URL
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: AUTH_SERVICE_URL } }
+            - name: LOCATION_SERVICE_URL
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: LOCATION_SERVICE_URL } }
+            - name: BOOKING_SERVICE_URL
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: BOOKING_SERVICE_URL } }
+            - name: REVIEW_SERVICE_URL
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: REVIEW_SERVICE_URL } }
+            - name: GIN_MODE
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: GIN_MODE } }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  # External entry point. Use LoadBalancer on a cloud provider, or NodePort
+  # / `kubectl port-forward svc/gateway 8080:8080` locally.
+  type: LoadBalancer
+  selector: { app: gateway }
+  ports:
+    - port: 8080
+      targetPort: 8080

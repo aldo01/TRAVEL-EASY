@@ -61,6 +61,7 @@ func main() {
 			locations.GET("/nearby", handlers.GetNearbyLocations)
 			locations.GET("/:id", handlers.GetLocation)
 			locations.GET("/:id/lockers", handlers.GetLocationLockers)
+			locations.GET("/:id/reviews", handlers.GetLocationReviews)
 		}
 
 		// Public routes - Lockers
@@ -75,6 +76,9 @@ func main() {
 		{
 			// Partner/host actions
 			protected.POST("/locations", handlers.CreateLocation)
+
+			// Reviews
+			protected.POST("/locations/:id/reviews", handlers.CreateReview)
 
 			// User profile
 			protected.GET("/profile", handlers.GetProfile)

@@ -1,0 +1,25 @@
+# Non-secret configuration shared across services.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: travel-easy-config
+data:
+  DB_USER: "postgres"
+  JWT_EXPIRY: "168h"
+  GIN_MODE: "release"
+  NATS_URL: "nats://nats:4222"
+  CORS_ORIGIN: "http://localhost:5173"
+
+  # Service discovery (in-cluster DNS names)
+  AUTH_SERVICE_URL: "http://auth-service:8001"
+  LOCATION_SERVICE_URL: "http://location-service:8002"
+  BOOKING_SERVICE_URL: "http://booking-service:8003"
+  REVIEW_SERVICE_URL: "http://review-service:8004"
+
+  # Email/SMS non-secret settings
+  BREVO_SENDER_NAME: "Travel Easy"
+  BREVO_SMS_SENDER: "TravelEasy"
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_FROM: "Travel Easy <no-reply@travel-easy.local>"
+  RESEND_FROM: "Travel Easy <onboarding@resend.dev>"

@@ -6,6 +6,7 @@ import type {
   StorageBooking,
   RateType,
   LocationType,
+  Review,
 } from '../types'
 
 export const storageService = {
@@ -66,6 +67,21 @@ export const storageService = {
   async getMyBookings() {
     const data = await apiService.get<{ count: number; bookings: StorageBooking[] }>(`/bookings`)
     return data.bookings
+  },
+
+  async getLocationReviews(locationId: string) {
+    const data = await apiService.get<{ count: number; reviews: Review[] }>(
+      `/reviews?locationId=${encodeURIComponent(locationId)}`
+    )
+    return data.reviews
+  },
+
+  async createReview(locationId: string, params: { rating: number; comment?: string }) {
+    const data = await apiService.post<{ review: Review }>(
+      `/reviews`,
+      { locationId, rating: params.rating, comment: params.comment ?? '' }
+    )
+    return data.review
   },
 
   async createLocation(params: {

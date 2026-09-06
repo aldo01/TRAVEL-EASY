@@ -1,15 +1,30 @@
 services:
-  postgres:
+  # ---------------------------------------------------------------------------
+  # Message broker (async events: booking.confirmed, review.created)
+  # ---------------------------------------------------------------------------
+  nats:
+    image: nats:2-alpine
+    restart: unless-stopped
+    command: ["-js"]
+    ports:
+      - "${NATS_PORT:-4222}:4222"
+    networks:
+      - travel-easy-net
+
+  # ---------------------------------------------------------------------------
+  # Databases (one per service — true isolation)
+  # ---------------------------------------------------------------------------
+  auth-db:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-      POSTGRES_DB: ${DB_NAME:-locker_storage}
+      POSTGRES_DB: auth
     ports:
-      - "${DB_PORT:-5433}:5432"
+      - "${AUTH_DB_PORT:-5434}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - auth_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
@@ -18,50 +33,215 @@ services:
     networks:
       - travel-easy-net
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+  location-db:
+    image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-locker_storage}?sslmode=disable
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: location
+    ports:
+      - "${LOCATION_DB_PORT:-5435}:5432"
+    volumes:
+      - location_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - travel-easy-net
+
+  booking-db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: booking
+    ports:
+      - "${BOOKING_DB_PORT:-5436}:5432"
+    volumes:
+      - booking_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - travel-easy-net
+
+  review-db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: review
+    ports:
+      - "${REVIEW_DB_PORT:-5437}:5432"
+    volumes:
+      - review_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - travel-easy-net
+
+  # ---------------------------------------------------------------------------
+  # One-shot migrate + seed init containers
+  # ---------------------------------------------------------------------------
+  auth-migrate:
+    image: travel-easy/auth-service
+    build:
+      context: ./services/auth-service
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@auth-db:5432/auth?sslmode=disable
+    command: ["/bin/sh", "-lc", "./migrate && ./seed"]
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    networks:
+      - travel-easy-net
+
+  location-migrate:
+    image: travel-easy/location-service
+    build:
+      context: ./services/location-service
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@location-db:5432/location?sslmode=disable
+    command: ["/bin/sh", "-lc", "./migrate && ./seed"]
+    depends_on:
+      location-db:
+        condition: service_healthy
+    networks:
+      - travel-easy-net
+
+  booking-migrate:
+    image: travel-easy/booking-service
+    build:
+      context: ./services/booking-service
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@booking-db:5432/booking?sslmode=disable
+    command: ["/bin/sh", "-lc", "./migrate"]
+    depends_on:
+      booking-db:
+        condition: service_healthy
+    networks:
+      - travel-easy-net
+
+  review-migrate:
+    image: travel-easy/review-service
+    build:
+      context: ./services/review-service
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@review-db:5432/review?sslmode=disable
+    command: ["/bin/sh", "-lc", "./migrate"]
+    depends_on:
+      review-db:
+        condition: service_healthy
+    networks:
+      - travel-easy-net
+
+  # ---------------------------------------------------------------------------
+  # Services
+  # ---------------------------------------------------------------------------
+  auth-service:
+    image: travel-easy/auth-service
+    build:
+      context: ./services/auth-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@auth-db:5432/auth?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       JWT_EXPIRY: ${JWT_EXPIRY:-168h}
-      PORT: "8080"
+      PORT: "8001"
       GIN_MODE: ${GIN_MODE:-release}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
-    ports:
-      - "${API_PORT:-8081}:8080"
     depends_on:
-      postgres:
+      auth-db:
         condition: service_healthy
-      backend_init:
+      auth-migrate:
         condition: service_completed_successfully
-      notification-service:
+    networks:
+      - travel-easy-net
+
+  location-service:
+    image: travel-easy/location-service
+    build:
+      context: ./services/location-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@location-db:5432/location?sslmode=disable
+      NATS_URL: nats://nats:4222
+      PORT: "8002"
+      GIN_MODE: ${GIN_MODE:-release}
+    depends_on:
+      location-db:
+        condition: service_healthy
+      location-migrate:
+        condition: service_completed_successfully
+      nats:
         condition: service_started
     networks:
       - travel-easy-net
 
-  backend_init:
+  booking-service:
+    image: travel-easy/booking-service
     build:
-      context: ./backend
-      dockerfile: Dockerfile
-    restart: "no"
+      context: ./services/booking-service
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-locker_storage}?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
-      JWT_EXPIRY: ${JWT_EXPIRY:-168h}
-      PORT: "8080"
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@booking-db:5432/booking?sslmode=disable
+      NATS_URL: nats://nats:4222
+      LOCATION_SERVICE_URL: http://location-service:8002
+      AUTH_SERVICE_URL: http://auth-service:8001
+      PORT: "8003"
       GIN_MODE: ${GIN_MODE:-release}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
     depends_on:
-      postgres:
+      booking-db:
         condition: service_healthy
-    command: ["/bin/sh", "-lc", "./migrate && ./seed"]
+      booking-migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
+      location-service:
+        condition: service_started
+      auth-service:
+        condition: service_started
+    networks:
+      - travel-easy-net
+
+  review-service:
+    image: travel-easy/review-service
+    build:
+      context: ./services/review-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@review-db:5432/review?sslmode=disable
+      NATS_URL: nats://nats:4222
+      AUTH_SERVICE_URL: http://auth-service:8001
+      PORT: "8004"
+      GIN_MODE: ${GIN_MODE:-release}
+    depends_on:
+      review-db:
+        condition: service_healthy
+      review-migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
+      auth-service:
+        condition: service_started
     networks:
       - travel-easy-net
 
   notification-service:
+    image: travel-easy/notification-service
     build:
       context: ./notification-service
       dockerfile: Dockerfile
@@ -69,10 +249,51 @@ services:
     environment:
       PORT: "8090"
       GIN_MODE: ${GIN_MODE:-release}
+      NATS_URL: nats://nats:4222
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      BREVO_SENDER_EMAIL: ${BREVO_SENDER_EMAIL:-}
+      BREVO_SENDER_NAME: ${BREVO_SENDER_NAME:-Travel Easy}
+      BREVO_SMS_SENDER: ${BREVO_SMS_SENDER:-TravelEasy}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-Travel Easy <onboarding@resend.dev>}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Travel Easy <no-reply@travel-easy.local>}
     ports:
       - "${NOTIFICATION_PORT:-8090}:8090"
+    depends_on:
+      nats:
+        condition: service_started
+    networks:
+      - travel-easy-net
+
+  gateway:
+    image: travel-easy/gateway
+    build:
+      context: ./services/gateway
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      AUTH_SERVICE_URL: http://auth-service:8001
+      LOCATION_SERVICE_URL: http://location-service:8002
+      BOOKING_SERVICE_URL: http://booking-service:8003
+      REVIEW_SERVICE_URL: http://review-service:8004
+      PORT: "8080"
+      GIN_MODE: ${GIN_MODE:-release}
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      auth-service:
+        condition: service_started
+      location-service:
+        condition: service_started
+      booking-service:
+        condition: service_started
+      review-service:
+        condition: service_started
     networks:
       - travel-easy-net
 
@@ -82,18 +303,21 @@ services:
     volumes:
       - ./:/app
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8081/api/v1}
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8080/api/v1}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     command: ["/bin/sh", "-lc", "if [ ! -d node_modules ] || [ ! -d node_modules/react-day-picker ]; then npm install; fi && npm run dev -- --host 0.0.0.0 --port 5173"]
     depends_on:
-      backend:
+      gateway:
         condition: service_started
     networks:
       - travel-easy-net
 
 volumes:
-  postgres_data:
+  auth_db_data:
+  location_db_data:
+  booking_db_data:
+  review_db_data:
 
 networks:
   travel-easy-net:

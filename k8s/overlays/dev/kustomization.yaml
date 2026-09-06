@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# ---------------------------- DEV environment ----------------------------
+namespace: travel-easy-dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+# Dev image tags. CI overrides these with the pushed registry image via
+# `kustomize edit set image ...`.
+images:
+  - name: travel-easy/auth-service
+    newTag: dev
+  - name: travel-easy/location-service
+    newTag: dev
+  - name: travel-easy/booking-service
+    newTag: dev
+  - name: travel-easy/review-service
+    newTag: dev
+  - name: travel-easy/notification-service
+    newTag: dev
+  - name: travel-easy/gateway
+    newTag: dev
+
+# Single replica per service in dev.
+replicas:
+  - name: auth-service
+    count: 1
+  - name: location-service
+    count: 1
+  - name: booking-service
+    count: 1
+  - name: review-service
+    count: 1
+  - name: notification-service
+    count: 1
+  - name: gateway
+    count: 1
+
+patches:
+  - path: configmap-patch.yaml
+  - path: secret-patch.yaml

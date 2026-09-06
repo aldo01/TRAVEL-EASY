@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Navigation, CheckCircle, X } from 'lucide-react'
 import { DayPicker } from 'react-day-picker'
 import { geocodeService, type PlaceSuggestion } from '../services/geocode'
+import LandingSections from '../components/LandingSections'
 
 function toRFC3339Local(date: Date) {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -162,9 +163,12 @@ export default function Home() {
   return (
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow-md p-8">
-        <h1 className="text-3xl font-bold text-gray-900">Luggage storage, nearby</h1>
-        <p className="text-gray-600 mt-1">
-          Find secure lockers in hotels, cafes, shops and kiosks — then book in minutes.
+        <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
+          Luggage storage, wherever you go
+        </h1>
+        <p className="text-gray-600 mt-2 text-lg">
+          Freedom to explore from <span className="font-semibold text-gray-900">₹99 / bag / day</span>. Find secure
+          lockers and partner shops in seconds, then book in minutes.
         </p>
 
         <div className="mt-6 grid grid-cols-1 md:grid-cols-6 gap-4">
@@ -334,24 +338,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="text-sm font-medium text-gray-900">Secure storage</div>
-          <div className="text-sm text-gray-600 mt-1">Verified partner locations with staffed handover options.</div>
-        </div>
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="text-sm font-medium text-gray-900">Fast booking</div>
-          <div className="text-sm text-gray-600 mt-1">Book a locker instantly and get your booking code.</div>
-        </div>
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="text-sm font-medium text-gray-900">Flexible time</div>
-          <div className="text-sm text-gray-600 mt-1">Hourly and daily pricing depending on location.</div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow-md p-6 text-sm text-gray-600">
-        Tip: Click the location arrow to use your current location and see nearby luggage drop points.
-      </div>
+      <LandingSections />
 
       {bookingConfirmed && bookingNumber && (
         <div className="fixed inset-0 z-[3000]">
