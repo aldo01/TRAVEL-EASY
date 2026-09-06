@@ -33,39 +33,55 @@ Travel Easy solves both sides at once: it gives travelers a searchable, bookable
 | Layer | Technology |
 |---|---|
 | Frontend | React 19 + TypeScript, Vite, React Router v6, Tailwind CSS, Leaflet/react-leaflet (maps), react-day-picker |
-| Backend API | Go 1.21, Gin (HTTP framework), GORM (ORM), JWT auth, bcrypt password hashing |
-| Notification service | Go + Gin microservice, sends transactional email via the Resend API |
-| Database | PostgreSQL 15 |
-| Geocoding | OpenStreetMap Nominatim (proxied through the backend for place-name autocomplete) |
-| Orchestration | Docker Compose (postgres, backend, one-shot migrate+seed, notification-service, frontend) |
+| API gateway | Go 1.21 + Gin — validates JWT, injects identity headers, reverse-proxies to services |
+| Microservices | Go 1.21, Gin, GORM — auth, location, booking, review (each owns its own database) |
+| Notifications | Go microservice — email + SMS via Brevo (SMTP / Resend fallbacks) |
+| Messaging | NATS — async events (`booking.confirmed`, `review.created`) |
+| Auth | JWT (HS256), bcrypt password hashing |
+| Databases | PostgreSQL 15 — one database per service (isolation) |
+| Geocoding | OpenStreetMap Nominatim (proxied via location-service) |
+| Local orchestration | Docker Compose |
+| Deployment | Kubernetes (Kustomize base + dev/prod overlays) |
+| CI/CD | GitHub Actions → GHCR images → kustomize/kubectl deploy |
 
 ## Architecture
 
 ```mermaid
 graph TD
-  U[User Browser] -->|HTTP :5173| FE[Frontend: React + Vite]
-  FE -->|REST JSON, :8081/api/v1| API[Backend API: Go + Gin + GORM]
-  API -->|SQL| DB[(PostgreSQL)]
-  API -->|fire-and-forget HTTP POST| NOTIF[notification-service: Go + Gin]
-  NOTIF -->|transactional email| RESEND[(Resend API)]
-  API -->|proxy| NOMINATIM[(OpenStreetMap Nominatim)]
-
-  subgraph Docker Compose
-    FE
-    API
-    DB
-    NOTIF
-  end
+  U[User Browser] -->|:5173| FE[Frontend: React + Vite]
+  FE -->|REST :8080/api/v1| GW[API Gateway: JWT, CORS, routing]
+  GW --> AUTH[auth-service :8001]
+  GW --> LOC[location-service :8002]
+  GW --> BOOK[booking-service :8003]
+  GW --> REV[review-service :8004]
+  BOOK -->|reserve locker| LOC
+  BOOK -->|user lookup| AUTH
+  REV -->|user lookup| AUTH
+  BOOK -. booking.confirmed .-> NATS((NATS))
+  REV -. review.created .-> NATS
+  NATS -. email + SMS .-> NOTIF[notification-service :8090]
+  NATS -. rating update .-> LOC
+  NOTIF -->|email + SMS| BREVO[(Brevo)]
+  LOC -->|proxy| NOMINATIM[(OSM Nominatim)]
+  AUTH --> DBA[(auth db)]
+  LOC --> DBL[(location db)]
+  BOOK --> DBB[(booking db)]
+  REV --> DBR[(review db)]
 ```
 
 ### Runtime services & ports
 
-| Service | In-container port | Host port |
+| Service | Container port | Host port (compose) |
 |---|---|---|
 | Frontend (Vite dev server) | 5173 | 5173 |
-| Backend API | 8080 | 8081 |
+| API gateway | 8080 | 8080 |
+| auth-service | 8001 | internal |
+| location-service | 8002 | internal |
+| booking-service | 8003 | internal |
+| review-service | 8004 | internal |
 | notification-service | 8090 | 8090 |
-| PostgreSQL | 5432 | 5433 |
+| NATS | 4222 | 4222 |
+| Postgres (auth / location / booking / review) | 5432 | 5434 / 5435 / 5436 / 5437 |
 
 ### Frontend pages
 
@@ -85,12 +101,12 @@ docker compose up -d --build
 ```
 
 - Frontend: http://localhost:5173
-- Backend health: http://localhost:8081/health
-- Backend API base: http://localhost:8081/api/v1
+- API gateway health: http://localhost:8080/health
+- API base (via gateway): http://localhost:8080/api/v1
 - notification-service health: http://localhost:8090/health
-- Postgres (host): localhost:5433
+- Postgres (per service, host): 5434 (auth), 5435 (location), 5436 (booking), 5437 (review)
 
-`docker compose up` also runs a one-shot `backend_init` service that runs the database migrations and seeds demo data before the API starts serving traffic.
+`docker compose up` also runs one-shot `*-migrate` init containers (per service) that run the database migrations — and seed demo data for auth and location — before the services start serving traffic.
 
 To stop:
 
@@ -105,23 +121,66 @@ docker compose down -v
 docker compose up -d --build
 ```
 
-> **Known local-dev quirk:** the `frontend` service in `docker-compose.yml` bind-mounts the repo's `node_modules` into a Linux container. If that folder was previously installed on a macOS host, Vite's `rolldown-vite` native binding will be for the wrong platform and the container will fail to start with a `Cannot find native binding` error. If that happens, just run the frontend natively on the host instead — `npm install && npm run dev` — it will talk to the already-running Dockerized backend on `localhost:8081` without any extra configuration.
+> **Known local-dev quirk:** the `frontend` service in `docker-compose.yml` bind-mounts the repo's `node_modules` into a Linux container. If that folder was previously installed on a macOS host, Vite's `rolldown-vite` native binding will be for the wrong platform and the container will fail to start with a `Cannot find native binding` error. If that happens, just run the frontend natively on the host instead — `npm install && npm run dev` — it will talk to the already-running Dockerized backend on `localhost:8080` without any extra configuration.
+
+## Deployment (Kubernetes — dev & prod)
+
+Kubernetes manifests live in `k8s/`, structured with **Kustomize**:
+
+- `k8s/base/` — shared manifests for every service (namespace-agnostic)
+- `k8s/overlays/dev/` — namespace `travel-easy-dev`, `:dev` images, 1 replica, `GIN_MODE=debug`
+- `k8s/overlays/prod/` — namespace `travel-easy-prod`, `:prod` images, 2 replicas, resource limits, `GIN_MODE=release`
+
+All secrets are centralized in Kubernetes `Secret` objects (`k8s/base/secret.yaml` plus per-env `secret-patch.yaml`) and consumed via `secretKeyRef` — no secret is hardcoded in application code. `DATABASE_URL` is composed in-manifest from `$(DB_PASSWORD)` so the password stays only in the Secret.
+
+```bash
+# preview a rendered environment (no cluster needed)
+kubectl kustomize k8s/overlays/dev
+
+# apply to a cluster
+kubectl apply -k k8s/overlays/dev     # → namespace travel-easy-dev
+kubectl apply -k k8s/overlays/prod    # → namespace travel-easy-prod
+```
+
+Run it free locally with **kind**:
+
+```bash
+kind create cluster --name travel-easy
+docker compose build
+for s in gateway auth-service location-service booking-service review-service notification-service; do
+  kind load docker-image travel-easy/$s --name travel-easy
+done
+kubectl apply -k k8s/overlays/dev
+kubectl -n travel-easy-dev port-forward svc/gateway 8080:8080
+```
+
+## CI/CD (GitHub Actions)
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `.github/workflows/ci.yml` | PRs, push to `dev`/`master` | Go build + vet (all services), frontend build, Docker builds, kustomize validation |
+| `.github/workflows/cd-dev.yml` | push to `dev` | Build & push images, deploy `overlays/dev` |
+| `.github/workflows/cd-prod.yml` | push to `master` / tag `v*` | Build & push, deploy `overlays/prod` (gated by the `prod` Environment) |
+| `.github/workflows/deploy.yml` | reusable | Shared build-push + kustomize apply used by both CD workflows |
+
+Images are published to **GHCR** (`ghcr.io/<owner>/travel-easy-<service>`). Deploys run `kustomize edit set image` + `kubectl apply -k`. To enable cluster deploys, add two repository secrets — `KUBE_CONFIG_DEV` and `KUBE_CONFIG_PROD` (base64-encoded kubeconfigs) — and add required reviewers to the `prod` GitHub Environment for a release approval gate. Without a kubeconfig the pipeline still builds and pushes images and simply skips the cluster apply.
 
 ## Documentation map
 
 - This file: end-to-end architecture, API, models, flows
 - [QUICK-START.md](QUICK-START.md): step-by-step run instructions (more detailed)
-- [backend/README.md](backend/README.md): backend-focused notes and curl examples
+- `k8s/`: Kubernetes (Kustomize) manifests for dev & prod
+- `.github/workflows/`: CI/CD pipelines
 
 ## API design
 
 ### Base URL
 
-Default (Docker):
+All API traffic goes through the **gateway**:
 
-- `http://localhost:8081/api/v1`
+- `http://localhost:8080/api/v1`
 
-The frontend reads the API base from `VITE_API_URL`.
+The gateway validates the JWT, injects `X-User-Id` / `X-User-Email`, and reverse-proxies to the owning service. The frontend reads the base from `VITE_API_URL`.
 
 ### Response envelope (all API routes)
 
@@ -200,19 +259,24 @@ Note: there is currently **no role/partner approval model** — any authenticate
 - `POST /bookings/:id/checkout`
 - `POST /bookings/:id/cancel`
 
+#### Reviews
+
+- `GET /reviews?locationId=<id>` (public) — list reviews for a location
+- `POST /reviews` (protected) — submit `{ locationId, rating (1-5), comment }`; one review per user per location. Publishes a `review.created` event that updates the location's aggregate rating.
+
 #### notification-service (internal, port 8090)
 
-Not part of `/api/v1` — a separate Go service the backend calls internally:
+A standalone Go microservice. It consumes the `booking.confirmed` event from NATS (and also exposes `POST /notify/booking-confirmed` for direct calls) and sends the confirmation as **email + SMS via Brevo**, with **SMTP** and **Resend** as fallbacks. If no provider is configured it logs the message instead of failing — a safe default for local dev that never blocks a booking. The service is structured along SOLID lines: `email.Sender` / `sms.Sender` interfaces with per-provider implementations, wired together in `main.go`.
 
 - `GET /health`
-- `POST /notify/booking-confirmed` — called by the backend's `CreateBooking` handler as a fire-and-forget goroutine right after a booking is created. Renders an HTML confirmation email (booking number, location, times, bags, price, QR code) and sends it via the Resend API using `RESEND_API_KEY`/`RESEND_FROM`. If no API key is configured, it logs what it would have sent instead of failing — safe default for local development, and it never blocks or fails the booking itself.
+- `POST /notify/booking-confirmed`
 
 ## Key API examples
 
 ### Register
 
 ```bash
-curl -sS -X POST http://localhost:8081/api/v1/auth/register \
+curl -sS -X POST http://localhost:8080/api/v1/auth/register \
   -H 'Content-Type: application/json' \
   -d '{
     "email": "test@example.com",
@@ -225,7 +289,7 @@ curl -sS -X POST http://localhost:8081/api/v1/auth/register \
 ### Login
 
 ```bash
-curl -sS -X POST http://localhost:8081/api/v1/auth/login \
+curl -sS -X POST http://localhost:8080/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"test@example.com","password":"password123"}'
 ```
@@ -233,25 +297,25 @@ curl -sS -X POST http://localhost:8081/api/v1/auth/login \
 ### List locations (city search)
 
 ```bash
-curl -sS 'http://localhost:8081/api/v1/locations?city=London'
+curl -sS 'http://localhost:8080/api/v1/locations?city=London'
 ```
 
 ### Nearby locations
 
 ```bash
-curl -sS 'http://localhost:8081/api/v1/locations/nearby?lat=51.5308&lon=-0.1238&radius=10'
+curl -sS 'http://localhost:8080/api/v1/locations/nearby?lat=51.5308&lon=-0.1238&radius=10'
 ```
 
 ### Place autocomplete
 
 ```bash
-curl -sS 'http://localhost:8081/api/v1/geocode/suggest?q=Mumbai&limit=5'
+curl -sS 'http://localhost:8080/api/v1/geocode/suggest?q=Mumbai&limit=5'
 ```
 
 ### Get available lockers for a location
 
 ```bash
-curl -sS 'http://localhost:8081/api/v1/locations/<locationId>/lockers?status=AVAILABLE'
+curl -sS 'http://localhost:8080/api/v1/locations/<locationId>/lockers?status=AVAILABLE'
 ```
 
 ### Create booking (protected)
@@ -259,7 +323,7 @@ curl -sS 'http://localhost:8081/api/v1/locations/<locationId>/lockers?status=AVA
 ```bash
 TOKEN='<paste token>'
 
-curl -sS -X POST http://localhost:8081/api/v1/bookings \
+curl -sS -X POST http://localhost:8080/api/v1/bookings \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -274,7 +338,7 @@ curl -sS -X POST http://localhost:8081/api/v1/bookings \
 ### Unlock locker (protected)
 
 ```bash
-curl -sS -X POST http://localhost:8081/api/v1/bookings/<bookingId>/unlock \
+curl -sS -X POST http://localhost:8080/api/v1/bookings/<bookingId>/unlock \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"qrCode":"<booking.qrCode>"}'
@@ -285,7 +349,7 @@ curl -sS -X POST http://localhost:8081/api/v1/bookings/<bookingId>/unlock \
 `POST /locations` creates the location and also generates lockers (numbered `1..N`).
 
 ```bash
-curl -sS -X POST http://localhost:8081/api/v1/locations \
+curl -sS -X POST http://localhost:8080/api/v1/locations \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -609,18 +673,19 @@ flowchart TD
 
 ## Seed data (dummy locations)
 
-On `docker compose up`, the `backend_init` service runs `./migrate && ./seed`.
+On `docker compose up`, the `auth-migrate` and `location-migrate` init containers run `./migrate && ./seed`.
 
 The seed creates:
 
 - Test user: `test@example.com` / `password123`
 - ~20 demo locations across multiple cities (Copenhagen, Bengaluru, New Delhi, Mumbai, London, New York) with small locker inventories and a sample booking
 
-If you update the seed code and don't see changes, rebuild and re-run init:
+If you update the seed code and don't see changes, rebuild and re-run the init containers:
 
 ```bash
-docker compose build backend backend_init
-docker compose run --rm backend_init
+docker compose build auth-service location-service
+docker compose run --rm auth-migrate
+docker compose run --rm location-migrate
 ```
 
 ## API contracts (request/response)
@@ -1074,7 +1139,7 @@ Response: `{ "status": "sent" }` (or logs the email and still returns success if
 | `CORS_ORIGIN` | backend | `http://localhost:5173` | Allowed frontend origin |
 | `RESEND_API_KEY` | notification-service | *(empty)* | Resend transactional email API key; if unset, emails are logged instead of sent |
 | `RESEND_FROM` | notification-service | `Travel Easy <onboarding@resend.dev>` | From-address for confirmation emails |
-| `VITE_API_URL` | frontend | `http://localhost:8081/api/v1` | Base URL the frontend calls |
+| `VITE_API_URL` | frontend | `http://localhost:8080/api/v1` | Base URL the frontend calls |
 
 ## Common troubleshooting
 
