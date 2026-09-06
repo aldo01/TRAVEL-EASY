@@ -1,5 +1,11 @@
 # Locker Storage API - Go Backend
 
+> ⚠️ **Legacy / deprecated.** This is the original monolithic backend. The app
+> has since been split into microservices under [`services/`](../services) (gateway,
+> auth, location, booking, review) fronted by an API gateway on port **8080**.
+> This directory is kept for reference and is no longer part of `docker-compose.yml`.
+> See the [root README](../README.md) for the current architecture.
+
 A RESTful API for a luggage locker storage system built with Go, Gin, GORM, and PostgreSQL.
 
 ## Features
