@@ -6,6 +6,7 @@ import { ArrowLeft, ExternalLink, Star } from 'lucide-react'
 import type { Location } from '../types'
 import { storageService } from '../services/storage'
 import BookingDialog from '../components/BookingDialog'
+import Reviews from '../components/Reviews'
 
 const MarkerIcon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -57,6 +58,17 @@ export default function LocationDetails() {
   const [error, setError] = useState<string | null>(null)
 
   const [bookingOpen, setBookingOpen] = useState(false)
+
+  const reloadLocation = async () => {
+    if (!locationId) return
+    try {
+      const data = await storageService.getLocation(locationId)
+      setLocation(data.location)
+      setAvailableLockers(data.availableLockers)
+    } catch {
+      // ignore refresh failure
+    }
+  }
 
   const initialStart = useMemo(() => parseStartParam(searchParams.get('start')), [searchParams])
   const bags = Number(searchParams.get('bags') ?? '2')
@@ -232,6 +244,8 @@ export default function LocationDetails() {
               </div>
             </div>
           </div>
+
+          <Reviews locationId={locationId} onReviewSubmitted={reloadLocation} />
 
           <div className="text-sm text-gray-600">
             <Link to="/locations" className="text-blue-600 hover:underline">See more locations</Link>

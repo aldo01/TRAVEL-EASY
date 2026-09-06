@@ -85,3 +85,15 @@ export interface User {
   phoneNumber?: string | null
   profileImageUrl?: string | null
 }
+
+export interface Review {
+  id: string
+  locationId: string
+  userId: string
+  bookingId?: string | null
+  userName: string
+  rating: number
+  comment: string
+  createdAt: string
+  updatedAt: string
+}

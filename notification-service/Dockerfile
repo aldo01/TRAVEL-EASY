@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY go.mod ./
 COPY . .
-RUN go mod tidy && go mod download
+ENV GOFLAGS=-mod=mod
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o notification-service .
 
 FROM alpine:latest

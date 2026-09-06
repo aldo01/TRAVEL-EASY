@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev, master]
+
+jobs:
+  backend:
+    name: Build & vet · ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gateway, context: services/gateway }
+          - { name: auth-service, context: services/auth-service }
+          - { name: location-service, context: services/location-service }
+          - { name: booking-service, context: services/booking-service }
+          - { name: review-service, context: services/review-service }
+          - { name: notification-service, context: notification-service }
+    env:
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+      - name: go build & vet
+        working-directory: ${{ matrix.context }}
+        run: |
+          go build ./...
+          go vet ./...
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+
+  images:
+    name: Docker build · ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gateway, context: services/gateway }
+          - { name: auth-service, context: services/auth-service }
+          - { name: location-service, context: services/location-service }
+          - { name: booking-service, context: services/booking-service }
+          - { name: review-service, context: services/review-service }
+          - { name: notification-service, context: notification-service }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          tags: travel-easy/${{ matrix.name }}:ci
+
+  manifests:
+    name: Validate k8s overlays
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - name: kustomize build (dev & prod)
+        run: |
+          kubectl kustomize k8s/overlays/dev > /dev/null
+          kubectl kustomize k8s/overlays/prod > /dev/null

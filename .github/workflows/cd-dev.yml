@@ -1,0 +1,22 @@
+name: CD · dev
+
+# Deploys to the dev environment on every push to `dev`.
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-dev
+  cancel-in-progress: true
+
+jobs:
+  deploy-dev:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      overlay: dev
+      tag: dev
+      namespace: travel-easy-dev
+    secrets:
+      KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_DEV }}

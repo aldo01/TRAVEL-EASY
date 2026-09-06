@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: auth-service }
+  template:
+    metadata:
+      labels: { app: auth-service }
+    spec:
+      # Run migrations + seed before the service starts.
+      initContainers:
+        - name: migrate
+          image: travel-easy/auth-service
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-lc", "./migrate && ./seed"]
+          env:
+            - name: DB_USER
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: DB_USER } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: travel-easy-secrets, key: DB_PASSWORD } }
+            - name: DATABASE_URL
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@auth-db:5432/auth?sslmode=disable"
+      containers:
+        - name: auth-service
+          image: travel-easy/auth-service
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          env:
+            - name: PORT
+              value: "8001"
+            - name: DB_USER
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: DB_USER } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: travel-easy-secrets, key: DB_PASSWORD } }
+            - name: DATABASE_URL
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@auth-db:5432/auth?sslmode=disable"
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: travel-easy-secrets, key: JWT_SECRET } }
+            - name: JWT_EXPIRY
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: JWT_EXPIRY } }
+            - name: GIN_MODE
+              valueFrom: { configMapKeyRef: { name: travel-easy-config, key: GIN_MODE } }
+          readinessProbe:
+            httpGet: { path: /health, port: 8001 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+spec:
+  selector: { app: auth-service }
+  ports:
+    - port: 8001
+      targetPort: 8001

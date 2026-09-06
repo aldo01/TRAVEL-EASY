@@ -1,0 +1,24 @@
+name: CD · prod
+
+# Deploys to the prod environment on push to `master` or a version tag.
+# Protect the `prod` GitHub Environment with required reviewers to gate releases.
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy-prod:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: prod
+      overlay: prod
+      tag: prod
+      namespace: travel-easy-prod
+    secrets:
+      KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_PROD }}

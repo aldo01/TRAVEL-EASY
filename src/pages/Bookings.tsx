@@ -122,7 +122,7 @@ export default function Bookings() {
               </div>
               <div className="text-right">
                 <div className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 inline-block">{b.status}</div>
-                <div className="text-sm text-gray-600 mt-2">{b.paymentStatus}</div>
+                <div className="text-xs text-gray-500 mt-2">Payment: {b.paymentStatus}</div>
               </div>
             </div>
 
